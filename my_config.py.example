@@ -1,0 +1,17 @@
+MY_EMAIL = # "_EMAIL_@_EMAIL_"
+MY_NCBI_API_KEY = # str("_API_KEY_")
+LIMIT_ROUND = 3
+REVIEW_CHECK = False
+COMMONALITY = 1
+SEARCH_LIMIT = 30
+RESULT_PDF_KEYWORD = str("result")
+RESULT_CYTOSCAPE_KEYWORD = str("cytoscape")
+
+
+# DETAIL
+import time
+c_time = str(time.ctime().replace(' ','_').replace(':','_'))
+RESULT_PDF_PATH = "./" + RESULT_PDF_KEYWORD + "_" + c_time + ".pdf"
+LOG_PATH = "./result_log.txt"
+GRAPH_D_PATH = "./" + RESULT_CYTOSCAPE_KEYWORD + "_D_" + c_time + ".cyjs"
+GRAPH_P_PATH = "./" + RESULT_CYTOSCAPE_KEYWORD + "_P_" + c_time + ".cyjs"

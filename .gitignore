@@ -1,3 +1,9 @@
+# ncbi traveler only
+my_config.py
+*.cyjs
+*.pdf
+result_log.txt
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
