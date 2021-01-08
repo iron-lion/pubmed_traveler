@@ -1,5 +1,4 @@
 # pubmed_traveler
-v0.1
 --
 I wanted to find common ancestors of the list of papers.
 

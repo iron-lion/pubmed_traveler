@@ -6,10 +6,9 @@
 
 import sys
 import networkx as nx
-import numpy as np
 import json
 import time
-from itertools import chain
+import random
 from Bio import Entrez
 import matplotlib.pyplot as plt
 from collections import Counter
@@ -100,6 +99,8 @@ def scan_neighbor_common_breadth_first(g, l, func_p, hit_list):
 
     next_list = list_to_common_list(next_list)
 
+    # di = False if func_p == get_ref_progenitor else True
+
     # 2. add neighbor to graph
     for (p, n) in next_list:
         tmp_nodes = g.nodes
@@ -112,7 +113,6 @@ def scan_neighbor_common_breadth_first(g, l, func_p, hit_list):
                 # return next_list ### test you
             g.add_node(n, review=is_it_rev)
             g.add_edge(p, n)
-
     return next_list
 
 
@@ -150,13 +150,13 @@ def list_to_common_list(q_list):
     next_dict = {k : v for k, v in dict(next_dict).items() if v > my_config.COMMONALITY }
 
     threshold = my_config.COMMONALITY
-    while (len(next_dict) > my_config.SEARCH_LIMIT):
+    while (len(next_dict) > my_config.SEARCH_LIMIT * 3):
         print ("WARNING: too many papers found, reconfigure threshold COMMONALITY: ", threshold)
         threshold += 1
         next_dict = {k : v for k, v in dict(next_dict).items() if v > threshold }
 
     if (len(next_dict) == 0):
-        next_dict = {k : v for k, v in dict(next_dict).items() if v > threshold-1 }
+        next_dict = {k : v for k, v in dict(next_dict).items() if v > threshold - 1 }
         if (len(next_dict) == 0):
             print ("WARNING: leaf node")
             return []
@@ -164,7 +164,8 @@ def list_to_common_list(q_list):
     selected = next_dict.keys()
 
     r_list = [(a, b) for a, b in q_list if b in selected]
-    return r_list[:my_config.SEARCH_LIMIT]
+    r_list = random.sample(r_list, min(my_config.SEARCH_LIMIT, len(r_list)))
+    return r_list
 
 
 #
@@ -182,13 +183,13 @@ def init_building_network(do_g, up_g, paper_list):
         for pe in p1_list:
             up_g.add_edge(pe[0], pe[1])
         for pe in d1_list:
-            do_g.add_edge(pe[0], pe[1])
+            do_g.add_edge(pe[1], pe[0])
 
     p1_list = list_to_common_list(p1_list)
     d1_list = list_to_common_list(d1_list)
 
-    cn_p = nx.number_connected_components(up_g)
-    cn_d = nx.number_connected_components(do_g)
+    cn_p = len([a for a in nx.weakly_connected_components(up_g)])
+    cn_d = len([a for a in nx.weakly_connected_components(do_g)])
     print("initial network's progeneitor cluster # : ", cn_p)
     print("initial network's descendant cluster # : ", cn_d)
 
@@ -200,22 +201,25 @@ def expand_one_network(p_list, p_g, func_p, review_list):
     # Second +  generation search
     # next_list = scan_neighbor_breadth_first(p_g, p_list, func_p, review_list)
     next_list = scan_neighbor_common_breadth_first(p_g, p_list, func_p, review_list)
-    cn = nx.number_connected_components(p_g)
+    # print(len(p_g.edges))
+    cn = len([a for a in nx.weakly_connected_components(p_g)])
     return next_list, cn
 
 
 #
-# result graph drawing part
+# result graph drawing! . start with initial review paper list . find path to each other .
 def has_review_hub(gg, paper_list):
-    g = nx.Graph()
+    g = nx.DiGraph()
+    ugg = nx.to_networkx_graph(gg, create_using=nx.DiGraph)
+
     for p1 in paper_list:
         if p1 not in g.nodes:
             g.add_node(p1, review=gg.nodes[p1]['review'])
         for p2 in paper_list:
-            if p1 is p2:
+            if (p1 == p2):
                 continue
 
-            paths = nx.all_simple_paths(gg, p1, p2)
+            paths = nx.all_simple_paths(ugg, p1, p2)
             for p in paths:
                 found = False
                 ps = p[1:-1]
@@ -224,7 +228,7 @@ def has_review_hub(gg, paper_list):
                         try:
                             if (gg.nodes[node]['review'] is True):
                                 found = True
-                        except:
+                        except KeyError:
                             gnode = gg.nodes[node]
                             gnode['review'] = find_review(get_abstract(node))
                             if (gnode['review'] is True):
@@ -232,11 +236,19 @@ def has_review_hub(gg, paper_list):
                                 found = True
                     else:  # Pass! result
                         found = True
+                        break
                 if (found is True):
-                    for i in range(len(ps)-1):
-                        g.add_edge(ps[i], ps[i+1])
-    ncc = nx.number_connected_components(g)
-    # print("result graph : ", ncc)
+                    for i in range(len(p)-1):
+                        if (gg.has_edge(p[i], p[i+1])):
+                            g.add_edge(p[i], p[i+1])
+                            print("edge -> ! ", p[i], p[i+1])
+                        else:
+                            g.add_edge(p[i+1], p[i])
+                            print("edge <- ! ", p[i], p[i+1])
+
+    print("REVIEW CHECK result graph : ", len(g.edges))
+    ncc = len([a for a in nx.weakly_connected_components(g)])
+    print("REVIEW CHECK result graph : ", ncc, len(g.edges))
     return g, ncc
 
 
@@ -259,8 +271,8 @@ def network_load(ppath):
 
 
 def init_network(dec_path, prog_path):
-    g_d = nx.Graph()
-    g_p = nx.Graph()
+    g_d = nx.DiGraph()
+    g_p = nx.DiGraph()
     """
     if os.path.exists(dec_path):
         g_d = network_load(dec_path)
@@ -279,7 +291,7 @@ def init_network(dec_path, prog_path):
 
 #
 # draw simple result network image on pdf
-def print_two_result(dg, pg):
+def print_pdf_result(dg, pg, rg):
     options = {
         "font_size": 10,
         "node_size": 200,
@@ -288,21 +300,26 @@ def print_two_result(dg, pg):
         "linewidths": 3
     }
 
-    plt.subplot(2, 1, 1)
-    plt.margins(0.2)
+    plt.margins(0.1)
     nx.draw_networkx(pg, **options)
     plt.axis("off")
     plt.ylabel('progenitor')
+    plt.savefig(my_config.RESULT_PDF_PATH + ".p.png")
 
-    node_labels = nx.get_node_attributes(dg, 'review')
-    plt.subplot(2, 1, 2)
-    plt.margins(0.2)
+    plt.clf()
+    plt.margins(0.1)
     nx.draw_networkx(dg, **options)
     plt.axis("off")
     plt.ylabel('descendant')
+    plt.savefig(my_config.RESULT_PDF_PATH + ".d.png")
 
-    plt.savefig(my_config.RESULT_PDF_PATH)
-
+    plt.clf()
+    plt.margins(0.1)
+    nx.draw_networkx(rg, **options)
+    plt.axis("off")
+    plt.ylabel('merge')
+    plt.savefig(my_config.RESULT_PDF_PATH + ".o.png")
+    plt.clf()
 
 # MAIN ---- ---- ----
 # ---- MAIN ---- ----
@@ -313,7 +330,7 @@ if __name__ == '__main__':
     paper_list = sys.argv[1:]
 
     if (len(paper_list) == 0):
-        paper_list = ["27883053", "29606308", "22258609", "31510697"]
+        paper_list = ["27883053", "29606308", "22258609", "31510697", "11070098", "20627893"]
     print("Query papers : ", paper_list)
 
     review_list = []
@@ -334,6 +351,9 @@ if __name__ == '__main__':
         prog_list, n_cluster_p = expand_one_network(prog_list, g_p, get_ref_progenitor, review_list)
         result_p_g, found_p_ncc = has_review_hub(g_p, paper_list)
         ct += 1
+    print(result_p_g.edges)
+
+    # sorted_components = [c for c in sorted(nx.weakly_connected_components(result_p_g), key=len, reverse=False)]
 
     # descendant
     dec_list = first_dec_list
@@ -348,13 +368,15 @@ if __name__ == '__main__':
         result_d_g, found_d_ncc = has_review_hub(g_d, paper_list)
         ct += 1
 
+    print(result_d_g.edges)
     # end, save
-    print_two_result(result_d_g, result_p_g)
+
     with open(my_config.LOG_PATH, 'a+') as log_fd:
         print(','.join(paper_list), " --> ",
               my_config.RESULT_PDF_PATH, " | ",
               my_config.GRAPH_D_PATH, ", ",
-              my_config.GRAPH_P_PATH, file=log_fd)
+              my_config.GRAPH_P_PATH, ", ",
+              my_config.GRAPH_PATH, file=log_fd)
 
     """
     network_save(g_d, "./tmp.d.cyjs")
@@ -363,5 +385,10 @@ if __name__ == '__main__':
     network_save(result_p_g, my_config.GRAPH_P_PATH)
     network_save(result_d_g, my_config.GRAPH_D_PATH)
 
+    result_one = nx.compose(result_p_g, result_d_g)
+    network_save(result_one, my_config.GRAPH_PATH)
+
+    cc = len([a for a in nx.weakly_connected_components(result_one)])
+    print_pdf_result(result_d_g, result_p_g, result_one)
     print(">______________")
-    print("I found review keywords : ", len(review_list))
+    print("I found review keywords : ", len(review_list), " Final result components: #", cc)

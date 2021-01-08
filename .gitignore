@@ -2,6 +2,7 @@
 my_config.py
 *.cyjs
 *.pdf
+*.png
 result_log.txt
 
 # Byte-compiled / optimized / DLL files
